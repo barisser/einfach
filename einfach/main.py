@@ -3,14 +3,22 @@ from keras.models import Model
 from keras.datasets import mnist
 import matplotlib.pyplot as plt
 import numpy as np
-
+from sklearn.cluster import KMeans
 
 # this is the size of our encoded representations
 encoding_dim = 32  # 32 floats -> compression of factor 24.5, assuming the input is 784 floats
-input_img = Input(shape=(784,))
+
+(x_train, _), (x_test, _) = mnist.load_data()
+
+x_train = x_train.astype('float32') / 255.
+x_test = x_test.astype('float32') / 255.
+x_train = x_train.reshape((len(x_train), np.prod(x_train.shape[1:])))
+x_test = x_test.reshape((len(x_test), np.prod(x_test.shape[1:])))
+
+
 
 def make_autoencoder():
-    # this is our input placeholder
+    input_img = Input(shape=(784,))
     # "encoded" is the encoded representation of the input
     encoded = Dense(encoding_dim, activation='relu')(input_img)    
 
@@ -28,47 +36,43 @@ def make_autoencoder():
 
     return autoencoder, encoder, decoder
 
-def train(autoencoder):
-    (x_train, _), (x_test, _) = mnist.load_data()
 
-    x_train = x_train.astype('float32') / 255.
-    x_test = x_test.astype('float32') / 255.
-    x_train = x_train.reshape((len(x_train), np.prod(x_train.shape[1:])))
-    x_test = x_test.reshape((len(x_test), np.prod(x_test.shape[1:])))
-    print x_train.shape
-    print x_test.shape
-
-    autoencoder.fit(x_train, x_train,
-                    epochs=5,
-                    batch_size=256,
-                    shuffle=True,
-                    validation_data=(x_test, x_test))
-    return autoencoder
 
 autoencoder, encoder, decoder = make_autoencoder()
 
-autoencoder = train(autoencoder)
+autoencoder.fit(x_train, x_train,
+                    epochs=20,
+                    batch_size=256,
+                    shuffle=True,
+                    validation_data=(x_test, x_test))
 
-# encode and decode some digits
-# note that we take them from the *test* set
 encoded_imgs = encoder.predict(x_test)
 decoded_imgs = decoder.predict(encoded_imgs)
 
+scores = []
+for i in range(1, 20):
+    kmeans = KMeans(n_clusters=i).fit(encoded_imgs)
+    score = kmeans.score(encoded_imgs)
+    print "{0} -- {1}".format(i, score)
+    scores.append(score)
 
-n = 10  # how many digits we will display
-plt.figure(figsize=(20, 4))
-for i in range(n):
-    # display original
-    ax = plt.subplot(2, n, i + 1)
-    plt.imshow(x_test[i].reshape(28, 28))
-    plt.gray()
-    ax.get_xaxis().set_visible(False)
-    ax.get_yaxis().set_visible(False)
-
-    # display reconstruction
-    ax = plt.subplot(2, n, i + 1 + n)
-    plt.imshow(decoded_imgs[i].reshape(28, 28))
-    plt.gray()
-    ax.get_xaxis().set_visible(False)
-    ax.get_yaxis().set_visible(False)
+plt.plot(scores)
 plt.show()
+
+# n = 10  # how many digits we will display
+# plt.figure(figsize=(20, 4))
+# for i in range(n):
+#     # display original
+#     ax = plt.subplot(2, n, i + 1)
+#     plt.imshow(x_test[i].reshape(28, 28))
+#     plt.gray()
+#     ax.get_xaxis().set_visible(False)
+#     ax.get_yaxis().set_visible(False)
+
+#     # display reconstruction
+#     ax = plt.subplot(2, n, i + 1 + n)
+#     plt.imshow(decoded_imgs[i].reshape(28, 28))
+#     plt.gray()
+#     ax.get_xaxis().set_visible(False)
+#     ax.get_yaxis().set_visible(False)
+# plt.show()
