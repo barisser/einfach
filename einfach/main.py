@@ -1,44 +1,74 @@
-import keras
+from keras.layers import Input, Dense
+from keras.models import Model
+from keras.datasets import mnist
+import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 
-from keras.models import Sequential
-from keras.layers import Dense, Activation
-from keras.layers import LSTM
-from keras.optimizers import Adam
-from keras.optimizers import RMSprop
 
-def build_nn():
-    model = Sequential()
-    #model.add(LSTM(128, input_shape=(maxlen, len(chars))))
-    model.add(Dense(16, input_dim=1))
-    #model.add(Dense(128))
-    #model.add(Dense(16))
-    model.add(Dense(1))
-    #opt = Adam()  # ???
-    model.compile(loss='mse', optimizer='adam')
-    return model
+# this is the size of our encoded representations
+encoding_dim = 32  # 32 floats -> compression of factor 24.5, assuming the input is 784 floats
+input_img = Input(shape=(784,))
 
-def train(model, X, scoring_function, batches=1, epochs=10):
-    """
-    Takes a model NN, some features X, and some scoring function,
-    and stochastically reinforces "positive" outcomes.
-    Breaks into N batches.
+def make_autoencoder():
+    # this is our input placeholder
+    # "encoded" is the encoded representation of the input
+    encoded = Dense(encoding_dim, activation='relu')(input_img)    
 
-    Scoring Functions must always return AVERAGE scores that do not differentiate between batch lengths.
-    """
-    batch_fraction = 1.0 / float(batches)
-    for epoch in range(epochs):
-        avg_score = scoring_function(model.predict(X))
-        for batch in range(batches):
-            mini_X = np.random.choice(X, size=int(batch_fraction * len(X)))
-            model = train_batch(model, mini_X, scoring_function, avg_score)
-    return model
+    # "decoded" is the lossy reconstruction of the input
+    decoded = Dense(784, activation='sigmoid')(encoded)
 
-def train_batch(model, mini_X, scoring_function, avg_score):
-    Y = model.predict(mini_X)
-    score = scoring_function(Y)
-    print "Saw Score: {0}".format(score)
-    weights = (np.ones((1, len(mini_X))) * (score - avg_score))[0]
-    model.train_on_batch(mini_X, Y, sample_weight=weights)
-    return model
+    # this model maps an input to its reconstruction
+    autoencoder = Model(input_img, decoded)
+
+    # this model maps an input to its encoded representation
+    encoder = Model(input_img, encoded)
+    encoded_input = Input(shape=(encoding_dim,))
+    decoder = Model(encoded_input, autoencoder.layers[-1](encoded_input))
+    autoencoder.compile(optimizer='adadelta', loss='binary_crossentropy')
+
+    return autoencoder, encoder, decoder
+
+def train(autoencoder):
+    (x_train, _), (x_test, _) = mnist.load_data()
+
+    x_train = x_train.astype('float32') / 255.
+    x_test = x_test.astype('float32') / 255.
+    x_train = x_train.reshape((len(x_train), np.prod(x_train.shape[1:])))
+    x_test = x_test.reshape((len(x_test), np.prod(x_test.shape[1:])))
+    print x_train.shape
+    print x_test.shape
+
+    autoencoder.fit(x_train, x_train,
+                    epochs=5,
+                    batch_size=256,
+                    shuffle=True,
+                    validation_data=(x_test, x_test))
+    return autoencoder
+
+autoencoder, encoder, decoder = make_autoencoder()
+
+autoencoder = train(autoencoder)
+
+# encode and decode some digits
+# note that we take them from the *test* set
+encoded_imgs = encoder.predict(x_test)
+decoded_imgs = decoder.predict(encoded_imgs)
+
+
+n = 10  # how many digits we will display
+plt.figure(figsize=(20, 4))
+for i in range(n):
+    # display original
+    ax = plt.subplot(2, n, i + 1)
+    plt.imshow(x_test[i].reshape(28, 28))
+    plt.gray()
+    ax.get_xaxis().set_visible(False)
+    ax.get_yaxis().set_visible(False)
+
+    # display reconstruction
+    ax = plt.subplot(2, n, i + 1 + n)
+    plt.imshow(decoded_imgs[i].reshape(28, 28))
+    plt.gray()
+    ax.get_xaxis().set_visible(False)
+    ax.get_yaxis().set_visible(False)
+plt.show()
